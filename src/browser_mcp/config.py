@@ -53,13 +53,13 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        profile = os.environ.get("AGENTEQA_PROFILE_DIR")
-        port_raw = os.environ.get("AGENTEQA_DEBUG_PORT")
+        profile = os.environ.get("Browser-MCP_PROFILE_DIR")
+        port_raw = os.environ.get("Browser-MCP_DEBUG_PORT")
         return cls(
             profile_dir=Path(profile) if profile else DEFAULT_PROFILE_DIR,
-            headless=_env_bool("AGENTEQA_HEADLESS", False),
+            headless=_env_bool("Browser-MCP_HEADLESS", False),
             debug_port=int(port_raw) if port_raw else DEFAULT_DEBUG_PORT,
-            human_delays=_env_bool("AGENTEQA_HUMAN_DELAYS", True),
+            human_delays=_env_bool("Browser-MCP_HUMAN_DELAYS", True),
             chrome_path=(
                 os.environ.get("CHROME_PATH")
                 or os.environ.get("CHROME_EXECUTABLE")

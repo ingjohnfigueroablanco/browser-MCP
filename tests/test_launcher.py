@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from agenteqa_navigator.chrome import launcher
-from agenteqa_navigator.config import Config, chrome_flags
-from agenteqa_navigator.chrome.ws_url import parse_ws_url
+from browser_mcp.chrome import launcher
+from browser_mcp.config import Config, chrome_flags
+from browser_mcp.chrome.ws_url import parse_ws_url
 
 
 def test_chrome_flags_include_port_profile_and_origin():

@@ -2,9 +2,9 @@
   "mcpServers": {
     "browser-mcp": {
       "command": "python",
-      "args": ["-m", "agenteqa_navigator"],
+      "args": ["-m", "browser_mcp"],
       "env": {
-        "AGENTEQA_HEADLESS": "0"
+        "Browser-MCP_HEADLESS": "0"
       }
     }
   }

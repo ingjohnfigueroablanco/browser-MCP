@@ -1,8 +1,8 @@
 services:
-  agenteqa-navigator:
+  browser-mcp:
     build: .
-    image: agenteqa-navigator:latest
-    container_name: agenteqa-navigator
+    image: browser-mcp:latest
+    container_name: browser-mcp
     ports:
       - "${MCP_PORT:-3067}:3067"
     environment:

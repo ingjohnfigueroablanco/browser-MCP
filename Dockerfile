@@ -1,7 +1,7 @@
-# AgenteQAPro Navigator — Chrome headless + MCP SSE server
-# Build:  docker build -t agenteqa-navigator .
-# Run:    docker run -p 8000:8000 agenteqa-navigator
-# With key: docker run -p 8000:8000 -e MCP_API_KEY=secret agenteqa-navigator
+# Browser-MCP Navigator — Chrome headless + MCP SSE server
+# Build:  docker build -t browser-mcp .
+# Run:    docker run -p 8000:8000 browser-mcp
+# With key: docker run -p 8000:8000 -e MCP_API_KEY=secret browser-mcp
 
 FROM python:3.12-slim
 
@@ -43,4 +43,4 @@ EXPOSE 3067
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3067/health')" || exit 1
 
-CMD ["python", "-m", "agenteqa_navigator", "--transport", "sse"]
+CMD ["python", "-m", "browser_mcp", "--transport", "sse"]

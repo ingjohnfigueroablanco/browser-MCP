@@ -1,6 +1,6 @@
 import pytest
 
-from agenteqa_navigator.snapshot.refmap import RefMap, StaleRefError
+from browser_mcp.snapshot.refmap import RefMap, StaleRefError
 
 
 def test_assign_returns_sequential_refs():

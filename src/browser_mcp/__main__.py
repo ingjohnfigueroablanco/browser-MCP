@@ -2,13 +2,13 @@
 
 Usage:
   stdio (Claude Code local):
-      python -m agenteqa_navigator
+      python -m browser_mcp
 
   SSE (Docker / remote server):
-      python -m agenteqa_navigator --transport sse --host 0.0.0.0 --port 8000
+      python -m browser_mcp --transport sse --host 0.0.0.0 --port 8000
 
   SSE with API key auth:
-      MCP_API_KEY=secret python -m agenteqa_navigator --transport sse
+      MCP_API_KEY=secret python -m browser_mcp --transport sse
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import os
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AgenteQAPro Navigator MCP server")
+    parser = argparse.ArgumentParser(description="Browser-MCP Navigator MCP server")
     parser.add_argument(
         "--transport", choices=["stdio", "sse"], default=os.getenv("MCP_TRANSPORT", "stdio"),
         help="stdio = local Claude Code; sse = Docker/remote (default: stdio)",
@@ -102,9 +102,9 @@ def _run_sse(mcp, host: str, port: int) -> None:
     app = _HealthMiddleware(app)
     if api_key:
         app = _ApiKeyMiddleware(app, api_key)
-        print(f"AgenteQAPro Navigator — SSE on http://{host}:{port}/sse (API key auth ON)")
+        print(f"Browser-MCP Navigator — SSE on http://{host}:{port}/sse (API key auth ON)")
     else:
-        print(f"AgenteQAPro Navigator — SSE on http://{host}:{port}/sse (no auth)")
+        print(f"Browser-MCP Navigator — SSE on http://{host}:{port}/sse (no auth)")
         print("  Set MCP_API_KEY env var to enable API key protection.")
 
     uvicorn.run(app, host=host, port=port)

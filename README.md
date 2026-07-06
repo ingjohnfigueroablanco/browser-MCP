@@ -1,10 +1,10 @@
-# Browser-MCP (AgenteQA Navigator)
+# Browser-MCP (Browser-MCP Navigator)
 
 Ultra-fast browser automation server over Chrome DevTools Protocol (CDP), exposed as a Model Context Protocol (MCP) server.
 
 No screenshots. No Playwright relay. Direct CDP WebSocket — 20–50× fewer tokens, ~10ms per action.
 
-> **Note**: The core Python package is named `agenteqa_navigator` internally.
+> **Note**: The core Python package is named `browser_mcp` internally.
 
 ## What it does
 
@@ -35,7 +35,7 @@ cd browser-MCP
 python -m venv .venv 
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .
-python -m agenteqa_navigator  # stdio mode
+python -m browser_mcp  # stdio mode
 ```
 
 ---
@@ -51,7 +51,7 @@ Add to your project's `.mcp.json`:
   "mcpServers": {
     "browser-mcp": {
       "command": "python",
-      "args": ["-m", "agenteqa_navigator"]
+      "args": ["-m", "browser_mcp"]
     }
   }
 }
@@ -171,8 +171,8 @@ js_eval_loop(
 | `MCP_API_KEY` | *(empty)* | API key header; empty = no auth |
 | `CHROME_PATH` | auto | Explicit path to chrome.exe |
 | `CHROME_EXTRA_ARGS` | *(empty)* | Extra Chrome flags |
-| `AGENTEQA_HEADLESS` | `0` | `1` for headless mode |
-| `AGENTEQA_HUMAN_DELAYS`| `1` | `0` removes human-like delays (faster) |
+| `Browser-MCP_HEADLESS` | `0` | `1` for headless mode |
+| `Browser-MCP_HUMAN_DELAYS`| `1` | `0` removes human-like delays (faster) |
 
 ---
 

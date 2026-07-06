@@ -25,7 +25,7 @@ async def lifespan(_server: FastMCP) -> AsyncIterator[AppCtx]:
         await browser.shutdown(kill=False)
 
 
-mcp = FastMCP("AgenteQAPro-Navigator", lifespan=lifespan)
+mcp = FastMCP("Browser-MCP-Navigator", lifespan=lifespan)
 
 
 def get_browser() -> BrowserManager:

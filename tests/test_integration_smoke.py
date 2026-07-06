@@ -10,9 +10,9 @@ import urllib.parse
 
 import pytest
 
-from agenteqa_navigator.browser.manager import BrowserManager
-from agenteqa_navigator.chrome import launcher
-from agenteqa_navigator.config import Config
+from browser_mcp.browser.manager import BrowserManager
+from browser_mcp.chrome import launcher
+from browser_mcp.config import Config
 
 pytestmark = pytest.mark.asyncio
 
