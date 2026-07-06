@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "browser-mcp": {
+      "command": "python",
+      "args": ["-m", "agenteqa_navigator"],
+      "env": {
+        "AGENTEQA_HEADLESS": "0"
+      }
+    }
+  }
+}

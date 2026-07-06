@@ -1,0 +1,389 @@
+"""BrowserManager: owns the Chrome process, CDP connection, active target and refmap.
+
+This is the long-lived 'daemon' object held by the MCP server lifespan. One persistent
+CDP WebSocket survives across every tool call, eliminating per-command startup latency.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import subprocess
+
+from ..actions import forms, keyboard, mouse
+from ..cdp.connection import CDPConnection
+from ..cdp.events import EventBuffers, NetEntry
+from ..chrome import launcher, ws_url
+from ..config import Config
+from ..snapshot import collector
+from ..snapshot.refmap import RefMap
+from . import waits
+
+
+class BrowserManager:
+    def __init__(self, cfg: Config | None = None) -> None:
+        self.cfg = cfg or Config.from_env()
+        self._proc: subprocess.Popen | None = None
+        self._conn: CDPConnection | None = None
+        self._events: EventBuffers | None = None
+        self._session_id: str | None = None
+        self._child_sessions: list[str] = []
+        self._refmap = RefMap()
+        self._lock = asyncio.Lock()
+
+    # --- lifecycle -----------------------------------------------------------
+    async def start(self, headless: bool | None = None) -> dict:
+        async with self._lock:
+            if self._conn and self._conn.is_connected:
+                # Verify the stored session is still alive; reattach if stale.
+                try:
+                    await self._current_url()
+                    return {"status": "already_running", "url": await self._current_url()}
+                except Exception:
+                    # Session stale — fall through to full reattach below.
+                    await self._conn.close()
+                    self._conn = None
+                    self._session_id = None
+                    self._child_sessions.clear()
+
+            if headless is not None:
+                object.__setattr__(self.cfg, "headless", headless)
+
+            port = self.cfg.debug_port
+            existing = await ws_url.probe_version(port)
+            if existing is None:
+                if not launcher._port_is_free(port):
+                    port = launcher.find_free_port(port + 1)
+                self._proc = launcher.launch(self.cfg, port)
+                payload = await ws_url.wait_for_version(port)
+            else:
+                payload = existing  # reattach to a browser already running
+
+            self._conn = CDPConnection(ws_url.parse_ws_url(payload))
+            await self._conn.connect()
+            await self._attach_to_page()
+            await self._enable_domains()
+            self._events = EventBuffers(self._conn)
+            self._events.attach()
+            return {"status": "started", "port": port, "url": await self._current_url()}
+
+    async def _attach_to_page(self) -> None:
+        assert self._conn is not None
+        targets = await self._conn.call("Target.getTargets")
+        all_pages = [t for t in targets.get("targetInfos", []) if t.get("type") == "page"]
+        # Prefer real pages over browser-internal chrome:// URLs which reject CDP commands.
+        real_pages = [t for t in all_pages if not (t.get("url") or "").startswith("chrome://")]
+        if real_pages:
+            target_id = real_pages[0]["targetId"]
+        elif all_pages:
+            # Only chrome:// tabs — create a blank tab to work with.
+            created = await self._conn.call("Target.createTarget", {"url": "about:blank"})
+            target_id = created["targetId"]
+        else:
+            created = await self._conn.call("Target.createTarget", {"url": "about:blank"})
+            target_id = created["targetId"]
+        attached = await self._conn.call(
+            "Target.attachToTarget", {"targetId": target_id, "flatten": True}
+        )
+        self._session_id = attached["sessionId"]
+        # Auto-attach to OOPIF iframes / popups under this page.
+        await self._conn.call(
+            "Target.setAutoAttach",
+            {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
+            session_id=self._session_id,
+        )
+        self._conn.on("Target.attachedToTarget", self._on_attached)
+        self._conn.on("Page.javascriptDialogOpening", self._on_dialog)
+
+    def _on_attached(self, params: dict, _sid: str | None) -> None:
+        info = params.get("targetInfo", {})
+        sid = params.get("sessionId")
+        if sid and info.get("type") in ("iframe", "page"):
+            if sid not in self._child_sessions:
+                self._child_sessions.append(sid)
+
+    def _on_dialog(self, params: dict, sid: str | None) -> None:
+        # Auto-accept JS dialogs so navigation never hangs waiting for input.
+        if self._conn is not None:
+            asyncio.create_task(
+                self._conn.call(
+                    "Page.handleJavaScriptDialog",
+                    {"accept": True},
+                    session_id=sid or self._session_id,
+                )
+            )
+
+    async def _enable_domains(self) -> None:
+        assert self._conn is not None
+        for domain in ("Page", "DOM", "Runtime", "Network", "Log", "Accessibility"):
+            await self._conn.call(f"{domain}.enable", session_id=self._session_id)
+
+    async def shutdown(self, kill: bool = False) -> dict:
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+        if kill and self._proc is not None:
+            self._proc.terminate()
+            self._proc = None
+        return {"status": "stopped", "killed": kill}
+
+    # --- navigation + snapshot ----------------------------------------------
+    async def navigate(self, url: str, wait: str = "load") -> None:
+        conn = self._require_conn()
+        try:
+            await conn.call("Page.navigate", {"url": url}, session_id=self._session_id)
+        except RuntimeError as exc:
+            if "not found" in str(exc).lower() or "session" in str(exc).lower():
+                # Session went stale (e.g. Chrome closed/replaced the tab). Reattach.
+                await self._attach_to_page()
+                await self._enable_domains()
+                await conn.call("Page.navigate", {"url": url}, session_id=self._session_id)
+            else:
+                raise
+        if wait == "load":
+            await waits.wait_load(conn, self._session_id)
+        elif wait == "networkidle":
+            await waits.wait_networkidle(conn, self._session_id)
+
+    async def snapshot(self, interactive_only: bool = True) -> dict:
+        conn = self._require_conn()
+        text, snap_id = await collector.capture(
+            conn,
+            self._refmap,
+            self._session_id,
+            child_sessions=self._child_sessions,
+            interactive_only=interactive_only,
+        )
+        return {"snapshot_id": snap_id, "snapshot": text, "refs": len(self._refmap)}
+
+    async def wait_for(self, text: str | None, timeout_ms: int) -> dict:
+        conn = self._require_conn()
+        if text is not None:
+            ok = await waits.wait_for_text(conn, text, self._session_id, timeout_ms)
+            return {"ok": ok, "waited_for": text}
+        return {"ok": True}
+
+    # --- actions (all re-snapshot at the end to keep refs fresh) -------------
+    async def click(self, ref: str) -> dict:
+        conn = self._require_conn()
+        await mouse.click(conn, self._refmap.resolve(ref), human=self.cfg.human_delays)
+        return await self.snapshot()
+
+    async def js_click(self, ref: str) -> dict:
+        """JS element.click() — bypasses CDP mouse events, reliable for React SPAs."""
+        conn = self._require_conn()
+        await mouse.js_click(conn, self._refmap.resolve(ref))
+        return await self.snapshot()
+
+    async def hover(self, ref: str) -> dict:
+        conn = self._require_conn()
+        await mouse.hover(conn, self._refmap.resolve(ref))
+        return await self.snapshot()
+
+    async def fill(self, ref: str, text: str, submit: bool = False) -> dict:
+        conn = self._require_conn()
+        await forms.fill(
+            conn, self._refmap.resolve(ref), text,
+            human=self.cfg.human_delays, submit=submit,
+        )
+        return await self.snapshot()
+
+    async def select_option(self, ref: str, value: str | None = None, label: str | None = None) -> dict:
+        conn = self._require_conn()
+        await forms.select_option(conn, self._refmap.resolve(ref), value=value, label=label)
+        return await self.snapshot()
+
+    async def press_key(self, key: str, ref: str | None) -> dict:
+        conn = self._require_conn()
+        sid = self._refmap.resolve(ref).session_id if ref else self._session_id
+        await keyboard.press_key(conn, key, sid)
+        return await self.snapshot()
+
+    # --- js / cdp escape hatches ---------------------------------------------
+    async def js_eval(self, script: str, ref: str | None = None) -> dict:
+        """Execute arbitrary JS in the page context.
+
+        ref=None  → Runtime.evaluate(script)          (expression mode)
+        ref=@eN   → Runtime.callFunctionOn(script)     (function bound to element as `this`)
+
+        Returns {"js_result": <value>, "exception": <msg|None>} + snapshot fields.
+        awaitPromise=True so async scripts work; returnByValue serialises primitives/objects.
+        """
+        conn = self._require_conn()
+        exception = None
+
+        if ref is None:
+            res = await conn.call(
+                "Runtime.evaluate",
+                {"expression": script, "returnByValue": True, "awaitPromise": True},
+                session_id=self._session_id,
+            )
+            value = (res.get("result") or {}).get("value")
+            if res.get("exceptionDetails"):
+                exception = str(res["exceptionDetails"].get("text") or res["exceptionDetails"])
+        else:
+            entry = self._refmap.resolve(ref)
+            obj = await conn.call(
+                "DOM.resolveNode", {"backendNodeId": entry.backend_node_id},
+                session_id=entry.session_id,
+            )
+            object_id = (obj.get("object") or {}).get("objectId")
+            res = await conn.call(
+                "Runtime.callFunctionOn",
+                {"objectId": object_id, "functionDeclaration": script,
+                 "returnByValue": True, "awaitPromise": True},
+                session_id=entry.session_id,
+            )
+            value = (res.get("result") or {}).get("value")
+            if res.get("exceptionDetails"):
+                exception = str(res["exceptionDetails"].get("text") or res["exceptionDetails"])
+
+        snap = await self.snapshot()
+        return {"js_result": value, "exception": exception,
+                "snapshot_id": snap["snapshot_id"], "snapshot": snap["snapshot"], "refs": snap["refs"]}
+
+    async def cdp_call(self, method: str, params: dict | None = None, use_session: bool = True) -> dict:
+        """Pass-through for any CDP domain.method call.
+
+        use_session=True (default) routes through the active page session so DOM/Runtime
+        commands reach the current page. use_session=False sends at browser level
+        (useful for Target.*, Browser.* methods).
+        """
+        conn = self._require_conn()
+        sid = self._session_id if use_session else None
+        result = await conn.call(method, params or {}, session_id=sid)
+        return {"cdp_result": result}
+
+    async def scroll(self, ref: str | None = None, x: int = 0, y: int = 400) -> dict:
+        """Scroll the page or a specific element.
+
+        ref=None → window.scrollBy(x, y)
+        ref=@eN  → element.scrollBy(x, y) then scrollIntoView fallback
+        y>0 scrolls down, y<0 up; x>0 right, x<0 left.
+        """
+        conn = self._require_conn()
+        if ref is None:
+            await conn.call(
+                "Runtime.evaluate",
+                {"expression": f"window.scrollBy({x},{y})", "returnByValue": True},
+                session_id=self._session_id,
+            )
+        else:
+            entry = self._refmap.resolve(ref)
+            obj = await conn.call(
+                "DOM.resolveNode", {"backendNodeId": entry.backend_node_id},
+                session_id=entry.session_id,
+            )
+            oid = (obj.get("object") or {}).get("objectId")
+            if oid:
+                await conn.call(
+                    "Runtime.callFunctionOn",
+                    {"objectId": oid,
+                     "functionDeclaration": f"function(){{this.scrollIntoView({{block:'center'}});this.scrollBy({x},{y});}}",
+                     "returnByValue": True},
+                    session_id=entry.session_id,
+                )
+        return await self.snapshot()
+
+    async def set_value(self, ref: str, value: str) -> dict:
+        """Set the value of any input using the native HTMLInputElement setter.
+
+        Bypasses React/Vue/Angular's synthetic event system and triggers real
+        'input' + 'change' events — required for controlled inputs in SPAs.
+        Equivalent to what jQuery's .val() used to do but React-compatible.
+        """
+        conn = self._require_conn()
+        entry = self._refmap.resolve(ref)
+        obj = await conn.call(
+            "DOM.resolveNode", {"backendNodeId": entry.backend_node_id},
+            session_id=entry.session_id,
+        )
+        oid = (obj.get("object") or {}).get("objectId")
+        if oid:
+            await conn.call(
+                "Runtime.callFunctionOn",
+                {
+                    "objectId": oid,
+                    "functionDeclaration": (
+                        "function(v){"
+                        " const proto=this.tagName==='SELECT'"
+                        "   ? window.HTMLSelectElement.prototype"
+                        "   : window.HTMLInputElement.prototype;"
+                        " const setter=Object.getOwnPropertyDescriptor(proto,'value').set;"
+                        " setter.call(this,v);"
+                        " this.dispatchEvent(new Event('input',{bubbles:true}));"
+                        " this.dispatchEvent(new Event('change',{bubbles:true}));"
+                        "}"
+                    ),
+                    "arguments": [{"value": str(value)}],
+                    "returnByValue": True,
+                },
+                session_id=entry.session_id,
+            )
+        return await self.snapshot()
+
+    # --- reads ---------------------------------------------------------------
+    async def get_text(self, ref: str | None) -> str:
+        conn = self._require_conn()
+        if ref is None:
+            res = await conn.call(
+                "Runtime.evaluate",
+                {"expression": "document.body ? document.body.innerText : ''",
+                 "returnByValue": True},
+                session_id=self._session_id,
+            )
+            return (res.get("result") or {}).get("value") or ""
+        entry = self._refmap.resolve(ref)
+        obj = await conn.call(
+            "DOM.resolveNode", {"backendNodeId": entry.backend_node_id},
+            session_id=entry.session_id,
+        )
+        object_id = (obj.get("object") or {}).get("objectId")
+        res = await conn.call(
+            "Runtime.callFunctionOn",
+            {"objectId": object_id,
+             "functionDeclaration": "function(){return this.innerText||this.value||'';}",
+             "returnByValue": True},
+            session_id=entry.session_id,
+        )
+        return (res.get("result") or {}).get("value") or ""
+
+    async def screenshot(self, full_page: bool = False) -> str:
+        conn = self._require_conn()
+        params = {"format": "png", "captureBeyondViewport": full_page}
+        res = await conn.call("Page.captureScreenshot", params, session_id=self._session_id)
+        return res.get("data", "")
+
+    def read_console(self, clear: bool = False) -> list[str]:
+        return self._events.read_console(clear) if self._events else []
+
+    def read_network(self, filter_substr: str | None, clear: bool = False) -> list[NetEntry]:
+        return self._events.read_network(filter_substr, clear) if self._events else []
+
+    async def current_url(self) -> dict:
+        return {"url": await self._current_url(), "title": await self._title()}
+
+    # --- helpers -------------------------------------------------------------
+    def _require_conn(self) -> CDPConnection:
+        if self._conn is None or not self._conn.is_connected:
+            raise RuntimeError("BROWSER_NOT_STARTED: llama browser_start primero.")
+        return self._conn
+
+    async def _current_url(self) -> str:
+        if self._conn is None:
+            return ""
+        res = await self._conn.call(
+            "Runtime.evaluate",
+            {"expression": "location.href", "returnByValue": True},
+            session_id=self._session_id,
+        )
+        return (res.get("result") or {}).get("value") or ""
+
+    async def _title(self) -> str:
+        if self._conn is None:
+            return ""
+        res = await self._conn.call(
+            "Runtime.evaluate",
+            {"expression": "document.title", "returnByValue": True},
+            session_id=self._session_id,
+        )
+        return (res.get("result") or {}).get("value") or ""

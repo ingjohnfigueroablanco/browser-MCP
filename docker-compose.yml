@@ -1,0 +1,30 @@
+services:
+  agenteqa-navigator:
+    build: .
+    image: agenteqa-navigator:latest
+    container_name: agenteqa-navigator
+    ports:
+      - "${MCP_PORT:-3067}:3067"
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-}          # leave empty = no auth (dev mode)
+      - MCP_TRANSPORT=sse
+      - CHROME_EXECUTABLE=/usr/bin/chromium
+      - CHROME_EXTRA_ARGS=--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new
+    shm_size: "2gb"                            # Chrome needs shared memory
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional: ngrok tunnel to expose localhost apps to the cloud browser
+  # Uncomment + set NGROK_AUTHTOKEN to use
+  # ngrok:
+  #   image: ngrok/ngrok:latest
+  #   command: http host.docker.internal:3000
+  #   environment:
+  #     - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+  #   ports:
+  #     - "4040:4040"   # ngrok dashboard

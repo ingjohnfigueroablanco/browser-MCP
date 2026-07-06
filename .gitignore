@@ -1,0 +1,27 @@
+# Chrome persistent profile (sessions/cookies)
+.chrome-profile/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets — never commit
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Temp / artifacts
+*.png
+*.log
+C:Temp*

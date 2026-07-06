@@ -1,0 +1,12 @@
+{
+  "_comment": "Use this when the MCP server runs in Docker (SSE mode)",
+  "mcpServers": {
+    "agenteqa-navigator": {
+      "type": "sse",
+      "url": "http://localhost:3067/sse",
+      "headers": {
+        "X-API-Key": "your-api-key-here"
+      }
+    }
+  }
+}
