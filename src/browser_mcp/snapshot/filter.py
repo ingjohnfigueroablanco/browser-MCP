@@ -24,6 +24,8 @@ INTERACTIVE_ROLES = frozenset(
         "spinbutton",
         "listbox",
         "textarea",
+        "iframe",
+        "Iframe",
     }
 )
 
