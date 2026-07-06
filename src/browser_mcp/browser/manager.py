@@ -26,6 +26,7 @@ class BrowserManager:
         self._conn: CDPConnection | None = None
         self._events: EventBuffers | None = None
         self._session_id: str | None = None
+        self._target_id: str | None = None
         self._child_sessions: list[str] = []
         self._refmap = RefMap()
         self._lock = asyncio.Lock()
@@ -85,6 +86,7 @@ class BrowserManager:
             "Target.attachToTarget", {"targetId": target_id, "flatten": True}
         )
         self._session_id = attached["sessionId"]
+        self._target_id = target_id
         # Auto-attach to OOPIF iframes / popups under this page.
         await self._conn.call(
             "Target.setAutoAttach",
@@ -92,14 +94,32 @@ class BrowserManager:
             session_id=self._session_id,
         )
         self._conn.on("Target.attachedToTarget", self._on_attached)
+        self._conn.on("Target.detachedFromTarget", self._on_detached)
         self._conn.on("Page.javascriptDialogOpening", self._on_dialog)
 
     def _on_attached(self, params: dict, _sid: str | None) -> None:
         info = params.get("targetInfo", {})
         sid = params.get("sessionId")
-        if sid and info.get("type") in ("iframe", "page"):
+        if not sid:
+            return
+        if info.get("type") == "page":
+            # Chrome swapped the primary page session (e.g. cross-process
+            # navigation during an OAuth/SSO redirect). The old sessionId is
+            # now detached; re-point at the new one or every call 404s with
+            # "Session with given id not found".
+            self._session_id = sid
+            self._target_id = info.get("targetId")
+            asyncio.create_task(self._enable_domains())
+        elif info.get("type") == "iframe":
             if sid not in self._child_sessions:
                 self._child_sessions.append(sid)
+
+    def _on_detached(self, params: dict, _sid: str | None) -> None:
+        # Prune dead iframe sessions (e.g. a login-page captcha widget torn down
+        # on navigation) so snapshot() stops trying to query them.
+        sid = params.get("sessionId")
+        if sid and sid in self._child_sessions:
+            self._child_sessions.remove(sid)
 
     def _on_dialog(self, params: dict, sid: str | None) -> None:
         # Auto-accept JS dialogs so navigation never hangs waiting for input.
@@ -140,7 +160,7 @@ class BrowserManager:
             else:
                 raise
         if wait == "load":
-            await waits.wait_load(conn, self._session_id)
+            await waits.wait_load(conn, lambda: self._session_id)
         elif wait == "networkidle":
             await waits.wait_networkidle(conn, self._session_id)
 
@@ -158,7 +178,7 @@ class BrowserManager:
     async def wait_for(self, text: str | None, timeout_ms: int) -> dict:
         conn = self._require_conn()
         if text is not None:
-            ok = await waits.wait_for_text(conn, text, self._session_id, timeout_ms)
+            ok = await waits.wait_for_text(conn, text, lambda: self._session_id, timeout_ms)
             return {"ok": ok, "waited_for": text}
         return {"ok": True}
 

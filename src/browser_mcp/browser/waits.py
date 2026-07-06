@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from ..cdp.connection import CDPConnection
+
+SessionIdFn = Callable[[], "str | None"]
 from ..config import (
     NAVIGATION_TIMEOUT,
     NETWORKIDLE_QUIET_SECONDS,
@@ -13,8 +16,14 @@ from ..config import (
 )
 
 
-async def wait_load(conn: CDPConnection, session_id: str | None, timeout: float = NAVIGATION_TIMEOUT) -> None:
-    """Wait for Page.loadEventFired, then briefly poll document.readyState."""
+async def wait_load(conn: CDPConnection, get_session_id: SessionIdFn, timeout: float = NAVIGATION_TIMEOUT) -> None:
+    """Wait for Page.loadEventFired, then briefly poll document.readyState.
+
+    ``get_session_id`` is re-invoked on every poll (not captured once) because a
+    cross-origin navigation can swap the underlying CDP session mid-wait; using a
+    frozen session_id would 404 with "Session with given id not found" the moment
+    the swap lands.
+    """
     loop = asyncio.get_event_loop()
     fired: asyncio.Future[None] = loop.create_future()
 
@@ -32,7 +41,13 @@ async def wait_load(conn: CDPConnection, session_id: str | None, timeout: float 
 
     deadline = loop.time() + READYSTATE_POLL_TIMEOUT
     while loop.time() < deadline:
-        ready = await _eval(conn, "document.readyState", session_id)
+        try:
+            ready = await _eval(conn, "document.readyState", get_session_id())
+        except RuntimeError as exc:
+            if "session" in str(exc).lower() or "not found" in str(exc).lower():
+                await asyncio.sleep(0.05)
+                continue
+            raise
         if ready == "complete":
             return
         await asyncio.sleep(0.05)
@@ -76,14 +91,20 @@ async def wait_networkidle(
 
 
 async def wait_for_text(
-    conn: CDPConnection, text: str, session_id: str | None, timeout_ms: int
+    conn: CDPConnection, text: str, get_session_id: SessionIdFn, timeout_ms: int
 ) -> bool:
     """Poll until ``text`` appears in document body innerText."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + timeout_ms / 1000.0
     expr = "document.body ? document.body.innerText : ''"
     while loop.time() < deadline:
-        body = await _eval(conn, expr, session_id) or ""
+        try:
+            body = await _eval(conn, expr, get_session_id()) or ""
+        except RuntimeError as exc:
+            if "session" in str(exc).lower() or "not found" in str(exc).lower():
+                await asyncio.sleep(WAIT_FOR_POLL_INTERVAL)
+                continue
+            raise
         if text in body:
             return True
         await asyncio.sleep(WAIT_FOR_POLL_INTERVAL)

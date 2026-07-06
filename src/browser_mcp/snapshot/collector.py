@@ -42,7 +42,16 @@ async def capture(
     blocks: list[str] = []
 
     for sid in sessions:
-        nodes = await _get_ax_nodes(conn, sid)
+        try:
+            nodes = await _get_ax_nodes(conn, sid)
+        except RuntimeError as exc:
+            if sid != session_id and (
+                "session" in str(exc).lower() or "not found" in str(exc).lower()
+            ):
+                # A child iframe session (e.g. a captcha widget) was torn down
+                # by navigation; skip it rather than failing the whole snapshot.
+                continue
+            raise
         if not nodes:
             continue
         text = serialize(nodes, refmap, interactive_only=interactive_only, session_id=sid)
