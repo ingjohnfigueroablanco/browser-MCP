@@ -1,17 +1,17 @@
-# Browser-MCP (Browser-MCP Navigator)
+# Fast-Browser-MCP (Fast-Browser-MCP Navigator)
 
 Ultra-fast browser automation server over Chrome DevTools Protocol (CDP), exposed as a Model Context Protocol (MCP) server.
 
 No screenshots. No Playwright relay. Direct CDP WebSocket — 20–50× fewer tokens, ~10ms per action.
 
-> **Note**: The core Python package is named `browser_mcp` internally.
+> **Note**: The core Python package is named `fast_browser_mcp` internally.
 
 ## What it does
 
 Controls a real Chrome browser from any AI agent that supports MCP. The agent receives a compact accessibility-tree snapshot with `@eN` references after every action — no pixels, no heavy HTML blobs.
 
 ```
-Agent  ──MCP──►  Browser-MCP Server  ──CDP──►  Chrome
+Agent  ──MCP──►  Fast-Browser-MCP Server  ──CDP──►  Chrome
 ```
 
 ---
@@ -35,7 +35,7 @@ cd browser-MCP
 python -m venv .venv 
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .
-python -m browser_mcp  # stdio mode
+python -m fast_browser_mcp  # stdio mode
 ```
 
 ---
@@ -49,9 +49,9 @@ Add to your project's `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "browser-mcp": {
+    "fast-browser-mcp": {
       "command": "python",
-      "args": ["-m", "browser_mcp"]
+      "args": ["-m", "fast_browser_mcp"]
     }
   }
 }
@@ -62,7 +62,7 @@ Add to your project's `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "browser-mcp": {
+    "fast-browser-mcp": {
       "type": "sse",
       "url": "http://localhost:3067/sse",
       "headers": { "X-API-Key": "your-key" }
@@ -171,8 +171,8 @@ js_eval_loop(
 | `MCP_API_KEY` | *(empty)* | API key header; empty = no auth |
 | `CHROME_PATH` | auto | Explicit path to chrome.exe |
 | `CHROME_EXTRA_ARGS` | *(empty)* | Extra Chrome flags |
-| `Browser-MCP_HEADLESS` | `0` | `1` for headless mode |
-| `Browser-MCP_HUMAN_DELAYS`| `1` | `0` removes human-like delays (faster) |
+| `Fast-Browser-MCP_HEADLESS` | `0` | `1` for headless mode |
+| `Fast-Browser-MCP_HUMAN_DELAYS`| `1` | `0` removes human-like delays (faster) |
 
 ---
 

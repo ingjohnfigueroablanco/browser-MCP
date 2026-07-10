@@ -1,11 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__browser-mcp__snapshot",
-      "mcp__browser-mcp__get_text",
-      "mcp__browser-mcp__screenshot",
-      "mcp__browser-mcp__read_network",
-      "mcp__browser-mcp__wait_for"
+      "mcp__fast-browser-mcp__snapshot",
+      "mcp__fast-browser-mcp__get_text",
+      "mcp__fast-browser-mcp__screenshot",
+      "mcp__fast-browser-mcp__read_network",
+      "mcp__fast-browser-mcp__wait_for"
     ]
   }
 }

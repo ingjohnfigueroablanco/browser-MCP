@@ -1,6 +1,6 @@
 import pytest
 
-from browser_mcp.snapshot.refmap import RefMap, StaleRefError
+from fast_browser_mcp.snapshot.refmap import RefMap, StaleRefError
 
 
 def test_assign_returns_sequential_refs():

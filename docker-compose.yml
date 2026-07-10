@@ -1,8 +1,8 @@
 services:
-  browser-mcp:
+  fast-browser-mcp:
     build: .
-    image: browser-mcp:latest
-    container_name: browser-mcp
+    image: fast-browser-mcp:latest
+    container_name: fast-browser-mcp
     ports:
       - "${MCP_PORT:-3067}:3067"
     environment:

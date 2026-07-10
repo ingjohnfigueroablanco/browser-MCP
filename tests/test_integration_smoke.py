@@ -10,9 +10,9 @@ import urllib.parse
 
 import pytest
 
-from browser_mcp.browser.manager import BrowserManager
-from browser_mcp.chrome import launcher
-from browser_mcp.config import Config
+from fast_browser_mcp.browser.manager import BrowserManager
+from fast_browser_mcp.chrome import launcher
+from fast_browser_mcp.config import Config
 
 pytestmark = pytest.mark.asyncio
 

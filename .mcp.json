@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "browser-mcp": {
+    "fast-browser-mcp": {
       "command": "python",
-      "args": ["-m", "browser_mcp"],
+      "args": ["-m", "fast_browser_mcp"],
       "env": {
-        "Browser-MCP_HEADLESS": "0"
+        "Fast-Browser-MCP_HEADLESS": "0"
       }
     }
   }

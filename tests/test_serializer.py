@@ -1,5 +1,5 @@
-from browser_mcp.snapshot.refmap import RefMap
-from browser_mcp.snapshot.serializer import serialize
+from fast_browser_mcp.snapshot.refmap import RefMap
+from fast_browser_mcp.snapshot.serializer import serialize
 
 
 def _node(node_id, role, name, backend, children=None, ignored=False, props=None):

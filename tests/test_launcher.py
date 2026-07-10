@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from browser_mcp.chrome import launcher
-from browser_mcp.config import Config, chrome_flags
-from browser_mcp.chrome.ws_url import parse_ws_url
+from fast_browser_mcp.chrome import launcher
+from fast_browser_mcp.config import Config, chrome_flags
+from fast_browser_mcp.chrome.ws_url import parse_ws_url
 
 
 def test_chrome_flags_include_port_profile_and_origin():
