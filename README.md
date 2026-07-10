@@ -19,8 +19,8 @@ Agent  ──MCP──►  Fast-Browser-MCP Server  ──CDP──►  Chrome
 ## Quick Start — Docker (Recommended)
 
 ```bash
-git clone https://github.com/ingjohnfigueroablanco/browser-MCP.git
-cd browser-MCP
+git clone https://github.com/ingjohnfigueroablanco/Fast-browser-MCP.git
+cd Fast-browser-MCP
 cp .env.example .env          # optionally set MCP_API_KEY
 docker compose up -d
 ```
@@ -30,8 +30,8 @@ Server ready at `http://localhost:3067/sse`.
 ## Quick Start — Local (No Docker)
 
 ```bash
-git clone https://github.com/ingjohnfigueroablanco/browser-MCP.git
-cd browser-MCP
+git clone https://github.com/ingjohnfigueroablanco/Fast-browser-MCP.git
+cd Fast-browser-MCP
 python -m venv .venv 
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e .
