@@ -11,6 +11,8 @@ services:
       - CHROME_EXECUTABLE=/usr/bin/chromium
       - CHROME_EXTRA_ARGS=--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new
     shm_size: "2gb"                            # Chrome needs shared memory
+    security_opt:
+      - seccomp:unconfined                     # avoids Chromium renderer crashes under Docker's default seccomp profile
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c",
